@@ -17,34 +17,90 @@ st.set_page_config(
 )
 
 st.title("⚽ Visualización interactiva de pases")
-st.write("Mundial de Qatar 2022 - StatsBomb Open Data")
+
+st.write(
+    "Selecciona un Mundial, un partido y un minuto "
+    "para visualizar los pases de ambos equipos."
+)
 
 
 # --------------------------------------------------
-# CARGAR TODOS LOS PARTIDOS DEL MUNDIAL
+# CARGAR COMPETICIONES
 # --------------------------------------------------
 
 @st.cache_data
-def cargar_partidos():
-    partidos = sb.matches(
-        competition_id=43,
-        season_id=106
+def cargar_competiciones():
+    return sb.competitions()
+
+
+competitions = cargar_competiciones()
+
+
+# --------------------------------------------------
+# FILTRAR FIFA WORLD CUP
+# --------------------------------------------------
+
+world_cups = competitions[
+    competitions["competition_name"] == "FIFA World Cup"
+].copy()
+
+
+# --------------------------------------------------
+# CREAR NOMBRE DEL MUNDIAL
+# --------------------------------------------------
+
+world_cups["mundial"] = (
+    world_cups["season_name"].astype(str)
+)
+
+
+# --------------------------------------------------
+# SELECCIONAR MUNDIAL
+# --------------------------------------------------
+
+mundial_seleccionado = st.selectbox(
+    "Selecciona un Mundial:",
+    world_cups["mundial"].unique()
+)
+
+
+# Obtener datos del Mundial elegido
+mundial = world_cups[
+    world_cups["mundial"] == mundial_seleccionado
+].iloc[0]
+
+
+competition_id = mundial["competition_id"]
+season_id = mundial["season_id"]
+
+
+# --------------------------------------------------
+# CARGAR PARTIDOS DEL MUNDIAL
+# --------------------------------------------------
+
+@st.cache_data
+def cargar_partidos(competition_id, season_id):
+
+    return sb.matches(
+        competition_id=competition_id,
+        season_id=season_id
     )
 
-    return partidos
 
-
-wc_2022 = cargar_partidos()
+partidos = cargar_partidos(
+    competition_id,
+    season_id
+)
 
 
 # --------------------------------------------------
-# CREAR NOMBRE PARA CADA PARTIDO
+# CREAR NOMBRE DEL PARTIDO
 # --------------------------------------------------
 
-wc_2022["partido"] = (
-    wc_2022["home_team"]
+partidos["partido"] = (
+    partidos["home_team"]
     + " vs "
-    + wc_2022["away_team"]
+    + partidos["away_team"]
 )
 
 
@@ -54,17 +110,16 @@ wc_2022["partido"] = (
 
 partido_seleccionado = st.selectbox(
     "Selecciona un partido:",
-    wc_2022["partido"].tolist()
+    partidos["partido"].tolist()
 )
 
 
-# Buscar la fila del partido seleccionado
-partido = wc_2022[
-    wc_2022["partido"] == partido_seleccionado
+# Obtener información del partido
+partido = partidos[
+    partidos["partido"] == partido_seleccionado
 ].iloc[0]
 
 
-# Obtener automáticamente el match_id
 match_id = partido["match_id"]
 
 
@@ -73,22 +128,17 @@ st.write(
     f"{partido['home_team']} vs {partido['away_team']}"
 )
 
-st.write(
-    f"**Match ID:** {match_id}"
-)
-
 
 # --------------------------------------------------
-# CARGAR EVENTOS DEL PARTIDO SELECCIONADO
+# CARGAR EVENTOS
 # --------------------------------------------------
 
 @st.cache_data
 def cargar_eventos(match_id):
-    events = sb.events(
+
+    return sb.events(
         match_id=match_id
     )
-
-    return events
 
 
 events = cargar_eventos(match_id)
@@ -163,35 +213,12 @@ final['y1'] = final['pass_end_location'].apply(
 
 
 # --------------------------------------------------
-# ELEGIR EQUIPO
-# --------------------------------------------------
-
-equipos = [
-    partido["home_team"],
-    partido["away_team"]
-]
-
-
-equipo_seleccionado = st.selectbox(
-    "Selecciona un equipo:",
-    equipos
-)
-
-
-# --------------------------------------------------
-# FILTRAR POR EQUIPO
-# --------------------------------------------------
-
-final_equipo = final[
-    final["team"] == equipo_seleccionado
-]
-
-
-# --------------------------------------------------
 # SLIDER DE MINUTO
 # --------------------------------------------------
 
-minuto_maximo = int(final["minute"].max())
+minuto_maximo = int(
+    final["minute"].max()
+)
 
 
 minuto = st.slider(
@@ -207,14 +234,10 @@ minuto = st.slider(
 # FILTRAR POR MINUTO
 # --------------------------------------------------
 
-datos_minuto = final_equipo[
-    final_equipo["minute"] == minuto
+datos_minuto = final[
+    final["minute"] == minuto
 ]
 
-
-st.write(
-    f"### {equipo_seleccionado}"
-)
 
 st.write(
     f"Pases realizados en el minuto {minuto}: "
@@ -240,7 +263,21 @@ fig, ax = pitch.draw(
 
 
 # --------------------------------------------------
-# GRAFICAR PASES
+# GRAFICAR PUNTOS DE ORIGEN
+# --------------------------------------------------
+
+sns.scatterplot(
+    data=datos_minuto,
+    x='x0',
+    y='x1',
+    hue='team',
+    ax=ax,
+    s=80
+)
+
+
+# --------------------------------------------------
+# GRAFICAR FLECHAS DE LOS PASES
 # --------------------------------------------------
 
 for _, pase in datos_minuto.iterrows():
@@ -251,18 +288,20 @@ for _, pase in datos_minuto.iterrows():
         pase['y0'],
         pase['y1'],
         ax=ax,
-        width=2,
-        headwidth=5,
-        headlength=5
+        width=1.5,
+        headwidth=4,
+        headlength=4,
+        alpha=0.7
     )
 
 
-# Punto inicial del pase
-pitch.scatter(
-    datos_minuto['x0'],
-    datos_minuto['x1'],
-    ax=ax,
-    s=60
+# --------------------------------------------------
+# LEYENDA
+# --------------------------------------------------
+
+plt.legend(
+    loc='upper center',
+    ncols=2
 )
 
 
@@ -271,23 +310,26 @@ pitch.scatter(
 # --------------------------------------------------
 
 ax.set_title(
-    f"{equipo_seleccionado} - Minuto {minuto}",
+    f"{partido['home_team']} vs {partido['away_team']} "
+    f"- Minuto {minuto}",
     fontsize=16
 )
 
 
 # --------------------------------------------------
-# MOSTRAR CANCHA EN STREAMLIT
+# MOSTRAR GRÁFICA
 # --------------------------------------------------
 
 st.pyplot(fig)
 
 
 # --------------------------------------------------
-# TABLA DE PASES
+# MOSTRAR TABLA
 # --------------------------------------------------
 
-with st.expander("Ver información de los pases"):
+with st.expander(
+    "Ver información de los pases"
+):
 
     st.dataframe(
         datos_minuto[
